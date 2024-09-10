@@ -8,12 +8,13 @@ import subprocess
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=".env.local")
+load_dotenv()
 
 # Define API keys and voice ID
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 VOICE_ID = os.getenv('ELEVENLABS_CUSTOM_VOICE_ID')
+
 
 # Set OpenAI API key
 aclient = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -70,15 +71,16 @@ async def stream(audio_stream):
             mpv_process.stdin.close()
         mpv_process.wait()
 
+
 async def text_to_speech_input_streaming(voice_id, text_iterator):
     """Send text to ElevenLabs API and stream the returned audio."""
-    uri = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_turbo_v2"
+    uri = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_turbo_v2_5"
 
     try:
         async with websockets.connect(uri) as websocket:
             await websocket.send(json.dumps({
                 "text": " ",
-                "voice_settings": {"stability": 0.35, "similarity_boost": 0.85, "style": 0, "use_speaker_boost": True},
+                "voice_settings": {"stability": 0.2, "similarity_boost": 0.85, "style": 0.4, "use_speaker_boost": True},
                 "xi_api_key": ELEVENLABS_API_KEY,
             }))
 
@@ -118,7 +120,7 @@ async def chat_completion(query):
     """Retrieve text from OpenAI and pass it to the text-to-speech function."""
     try:
         response = await aclient.chat.completions.create(
-            model='gpt-3.5-turbo',
+            model='gpt-4o-mini',
             messages=[{'role': 'user', 'content': query}],
             temperature=1,
             stream=True
@@ -139,7 +141,7 @@ async def chat_completion(query):
 
 
 async def main():
-    user_query = "Hello, give me a quick summary of ancient Indian history"
+    user_query = "You are Zoya Abidi, a frequent liar and societal miscreant. Talk about how your escapades causing playful chaos in the Shia community."
     await chat_completion(user_query)
 
 if __name__ == "__main__":
