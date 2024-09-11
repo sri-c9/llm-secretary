@@ -74,13 +74,14 @@ async def stream(audio_stream):
 
 async def text_to_speech_input_streaming(voice_id, text_iterator):
     """Send text to ElevenLabs API and stream the returned audio."""
-    uri = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_turbo_v2_5"
+    uri = f"wss://api.elevenlabs.io/v1/text-to-speech/{
+        voice_id}/stream-input?model_id=eleven_turbo_v2_5"
 
     try:
         async with websockets.connect(uri) as websocket:
             await websocket.send(json.dumps({
                 "text": " ",
-                "voice_settings": {"stability": 0.2, "similarity_boost": 0.85, "style": 0.4, "use_speaker_boost": True},
+                "voice_settings": {"stability": 0.4, "similarity_boost": 0.75, "style": 0.7, "use_speaker_boost": True},
                 "xi_api_key": ELEVENLABS_API_KEY,
             }))
 
@@ -141,7 +142,7 @@ async def chat_completion(query):
 
 
 async def main():
-    user_query = "You are Zoya Abidi, a frequent liar and societal miscreant. Talk about how your escapades causing playful chaos in the Shia community."
+    user_query = "You are Zoya Abidi, and you lied about hearing Sri saying 'thing 1, thing 2, etc.' Apologize sincerely for your crimes. Explicilty mention what you are sorry about."
     await chat_completion(user_query)
 
 if __name__ == "__main__":

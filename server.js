@@ -21,6 +21,7 @@ function log(message, ...args) {
 }
 
 function handleRequest(request, response) {
+  console.log("request to Websocket server", request);
   try {
     dispatcher.dispatch(request, response);
   } catch (err) {
@@ -28,8 +29,9 @@ function handleRequest(request, response) {
   }
 }
 
-dispatcher.onGet("/twilio/incoming", function (req, res) {
-  log("Testing a new change?");
+dispatcher.onGet("/", function (req, res) {
+  // console.log("Testing a new change?");
+  console.log("request in websocket server inside GET /", req);
 
   var filePath = path.join(__dirname + "/templates", "streams.xml");
   var stat = fs.statSync(filePath);
@@ -136,10 +138,10 @@ class MediaStream {
     log("To Twilio: Sending mark event", markMessage);
     this.connection.sendUTF(JSON.stringify(markMessage));
     this.repeatCount++;
-    if (this.repeatCount === 5) {
-      log(`Server: Repeated ${this.repeatCount} times...closing`);
-      this.connection.close(1000, "Repeated 5 times");
-    }
+    // if (this.repeatCount === 5) {
+    //   log(`Server: Repeated ${this.repeatCount} times...closing`);
+    //   this.connection.close(1000, "Repeated 5 times");
+    // }
   }
 
   close() {
@@ -148,5 +150,5 @@ class MediaStream {
 }
 
 wsserver.listen(HTTP_SERVER_PORT, function () {
-  console.log("Server listening on: http://localhost:%s", HTTP_SERVER_PORT);
+  console.log("Server listening on: ws://localhost:%s", HTTP_SERVER_PORT);
 });
