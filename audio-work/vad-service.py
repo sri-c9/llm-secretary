@@ -21,18 +21,17 @@ async def vad_process(websocket):
     try:
         async for message in websocket:
             if isinstance(message, bytes):
-                print("messages is instance of bytes")
+                print(f"Received audio chunk of size: {len(message)} bytes")
                 buffer.extend(message)
 
                 # Process audio frames in chunks
                 while len(buffer) >= (FRAME_DURATION_MS * 2):  # 16-bit PCM, 16kHz
-                    print("in while loop[]")
                     audio_frame = buffer[:FRAME_DURATION_MS * 2]
                     buffer = buffer[FRAME_DURATION_MS * 2:]
                     # Detect whether the frame contains speech
                     is_speech = vad.is_speech(
                         audio_frame, sample_rate=16000)
-                    print("is_speech:", is_speech)
+                    print(f"Frame processed. Is speech: {is_speech}")
                     if is_speech:
                         print("Speech detected.")
                         silence_start_time = None  # Reset silence start time on speech detection
@@ -44,8 +43,7 @@ async def vad_process(websocket):
                         # Calculate the duration of silence
                         silence_duration = time.time() - silence_start_time
                         if silence_duration >= SILENCE_THRESHOLD:
-                            print(f"Silence detected for {
-                                  SILENCE_THRESHOLD} seconds.")
+                            print(f"Silence detected for {SILENCE_THRESHOLD} seconds.")
                             # Here you can perform an action when silence is detected for the threshold duration
                             silence_start_time = None  # Reset silence tracking
 
@@ -58,8 +56,10 @@ async def vad_process(websocket):
 
 
 async def main():
-    # Connect to the existing WebSocket server running on localhost:8080
-    async with websockets.connect("ws://localhost:8080/ws-server") as websocket:
+    ws_url = "ws://localhost:80"
+    print(f"Attempting to connect to WebSocket server at: {ws_url}")
+    async with websockets.connect(ws_url) as websocket:
+        print(f"Connected successfully to: {websocket.path}")
         await vad_process(websocket)
 
 # Run the client

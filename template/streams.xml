@@ -1,6 +1,0 @@
-<Response>
-  <Gather input="speech" speechTimeout="auto">
-    <Say>Listening...</Say>
-  </Gather>
-  <Say>Silence detected, switching turns.</Say>
-</Response>

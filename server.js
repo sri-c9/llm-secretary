@@ -7,13 +7,12 @@ var WebSocketServer = require("websocket").server;
 var dispatcher = new HttpDispatcher();
 var wsserver = http.createServer(handleRequest);
 
-const HTTP_SERVER_PORT = 8080;
+const HTTP_SERVER_PORT = 80;
 const REPEAT_THRESHOLD = 50;
 
 var mediaws = new WebSocketServer({
   httpServer: wsserver,
   autoAcceptConnections: true,
-  path: "/ws-server",
 });
 
 function log(message, ...args) {
@@ -21,7 +20,6 @@ function log(message, ...args) {
 }
 
 function handleRequest(request, response) {
-  console.log("request to Websocket server", request);
   try {
     dispatcher.dispatch(request, response);
   } catch (err) {
@@ -29,9 +27,8 @@ function handleRequest(request, response) {
   }
 }
 
-dispatcher.onGet("/", function (req, res) {
-  // console.log("Testing a new change?");
-  console.log("request in websocket server inside GET /", req);
+dispatcher.onPost("/twiml", function (req, res) {
+  log("POST TwiML");
 
   var filePath = path.join(__dirname + "/templates", "streams.xml");
   var stat = fs.statSync(filePath);
@@ -61,40 +58,36 @@ class MediaStream {
   }
 
   processMessage(message) {
-    console.log("Processing message:");
     if (message.type === "utf8") {
       var data = JSON.parse(message.utf8Data);
-      console.log("data", data);
       if (data.event === "connected") {
-        console.log("From Twilio: Connected event received: ", data);
+        log("From Twilio: Connected event received: ", data);
       }
       if (data.event === "start") {
         log("From Twilio: Start event received: ", data);
       }
       if (data.event === "media") {
         if (!this.hasSeenMedia) {
-          console.log("From Twilio: Media event received: ", data);
-          console.log("Server: Suppressing additional messages...");
+          log("From Twilio: Media event received: ", data);
+          log("Server: Suppressing additional messages...");
           this.hasSeenMedia = true;
         }
         // Store media messages
         this.messages.push(data);
         if (this.messages.length >= REPEAT_THRESHOLD) {
-          console.log(
-            `From Twilio: ${this.messages.length} omitted media messages`
-          );
+          log(`From Twilio: ${this.messages.length} omitted media messages`);
           this.repeat();
         }
       }
       if (data.event === "mark") {
-        console.log("From Twilio: Mark event received", data);
+        log("From Twilio: Mark event received", data);
       }
       if (data.event === "close") {
-        console.log("From Twilio: Close event received: ", data);
+        log("From Twilio: Close event received: ", data);
         this.close();
       }
     } else if (message.type === "binary") {
-      console.log("From Twilio: binary message received (not supported)");
+      log("From Twilio: binary message received (not supported)");
     }
   }
 
@@ -138,10 +131,10 @@ class MediaStream {
     log("To Twilio: Sending mark event", markMessage);
     this.connection.sendUTF(JSON.stringify(markMessage));
     this.repeatCount++;
-    // if (this.repeatCount === 5) {
-    //   log(`Server: Repeated ${this.repeatCount} times...closing`);
-    //   this.connection.close(1000, "Repeated 5 times");
-    // }
+    if (this.repeatCount === 5) {
+      log(`Server: Repeated ${this.repeatCount} times...closing`);
+      this.connection.close(1000, "Repeated 5 times");
+    }
   }
 
   close() {
@@ -150,5 +143,5 @@ class MediaStream {
 }
 
 wsserver.listen(HTTP_SERVER_PORT, function () {
-  console.log("Server listening on: ws://localhost:%s", HTTP_SERVER_PORT);
+  console.log("Server listening on: http://localhost:%s", HTTP_SERVER_PORT);
 });

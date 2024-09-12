@@ -14,15 +14,16 @@ router.post("/incoming", async (req, res) => {
     console.log("Incoming call from:", fromNumber);
 
     const response = new VoiceResponse();
+    // const connect = response.connect();
+    // connect.stream({
+    //   // url: "ws://loved-viper-notable.ngrok-free.app/ws-server",
+    //   url: "ws://loved-viper-notable.ngrok-free.app",
+    // });
+
     const start = response.start();
     start.stream({
-      name: "LLM Secretary",
-      url: "wss://loved-viper-notable.ngrok-free.app/ws-server",
-    });
-
-    const connect = response.connect();
-    connect.stream({
-      url: "wss://loved-viper-notable.ngrok-free.app/ws-server",
+      // url: "ws://loved-viper-notable.ngrok-free.app/ws-server",
+      url: "ws://loved-viper-notable.ngrok-free.app",
     });
 
     response.say(
