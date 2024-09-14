@@ -1,154 +1,138 @@
-const fs = require("fs");
-const path = require("path");
-var http = require("http");
-var HttpDispatcher = require("httpdispatcher");
-var WebSocketServer = require("websocket").server;
+require("dotenv").config();
+const express = require("express");
+const hbs = require("express-handlebars");
+const expressWebSocket = require("express-ws");
+const websocket = require("websocket-stream");
+const websocketStream = require("websocket-stream/stream");
+const Twilio = require("twilio");
+const { DialogflowService } = require("./dialogflow-utils");
 
-var dispatcher = new HttpDispatcher();
-var wsserver = http.createServer(handleRequest);
+const PORT = process.env.PORT || 3000;
 
-const HTTP_SERVER_PORT = 8080;
-const REPEAT_THRESHOLD = 50;
-
-var mediaws = new WebSocketServer({
-  httpServer: wsserver,
-  autoAcceptConnections: true,
-  path: "/ws-server",
+const app = express();
+// extend express app with app.ws()
+expressWebSocket(app, null, {
+  perMessageDeflate: false,
 });
 
-function log(message, ...args) {
-  console.log(new Date(), message, ...args);
-}
+app.engine("hbs", hbs());
+app.set("view engine", "hbs");
 
-function handleRequest(request, response) {
-  console.log("request to Websocket server", request);
+// make all the files in 'public' available
+app.use(express.static("public"));
+app.get("/", (request, response) => {
+  response.render("home", { layout: false });
+});
+
+// Responds with Twilio instructions to begin the stream
+app.post("/twiml", (request, response) => {
+  response.setHeader("Content-Typ`e", "application/xml");
+  // ngrok sets x-original-host header
+  const host = request.headers["x-original-host"] || request.hostname;
+  console.log("host var", host);
+  response.render("twiml", { host, layout: false });
+});
+
+app.ws("/media", (ws, req) => {
+  let client;
   try {
-    dispatcher.dispatch(request, response);
+    client = new Twilio();
   } catch (err) {
+    if (process.env.TWILIO_ACCOUNT_SID === undefined) {
+      console.error(
+        "Ensure that you have set your environment variable TWILIO_ACCOUNT_SID. This can be copied from https://twilio.com/console"
+      );
+      console.log("Exiting");
+      return;
+    }
     console.error(err);
   }
-}
+  // This will get populated on callStarted
+  let callSid;
+  let streamSid;
+  // MediaStream coming from Twilio
+  const mediaStream = websocketStream(ws, {
+    binary: false,
+  });
+  const dialogflowService = new DialogflowService();
 
-dispatcher.onGet("/", function (req, res) {
-  // console.log("Testing a new change?");
-  console.log("request in websocket server inside GET /", req);
-
-  var filePath = path.join(__dirname + "/templates", "streams.xml");
-  var stat = fs.statSync(filePath);
-
-  res.writeHead(200, {
-    "Content-Type": "text/xml",
-    "Content-Length": stat.size,
+  mediaStream.on("data", (data) => {
+    dialogflowService.send(data);
   });
 
-  var readStream = fs.createReadStream(filePath);
-  readStream.pipe(res);
-});
+  mediaStream.on("finish", () => {
+    console.log("MediaStream has finished");
+    dialogflowService.finish();
+  });
 
-mediaws.on("connect", function (connection) {
-  log("From Twilio: Connection accepted");
-  new MediaStream(connection);
-});
+  dialogflowService.on("callStarted", (data) => {
+    callSid = data.callSid;
+    streamSid = data.streamSid;
+  });
 
-class MediaStream {
-  constructor(connection) {
-    this.connection = connection;
-    connection.on("message", this.processMessage.bind(this));
-    connection.on("close", this.close.bind(this));
-    this.hasSeenMedia = false;
-    this.messages = [];
-    this.repeatCount = 0;
-  }
-
-  processMessage(message) {
-    console.log("Processing message:");
-    if (message.type === "utf8") {
-      var data = JSON.parse(message.utf8Data);
-      console.log("data", data);
-      if (data.event === "connected") {
-        console.log("From Twilio: Connected event received: ", data);
-      }
-      if (data.event === "start") {
-        log("From Twilio: Start event received: ", data);
-      }
-      if (data.event === "media") {
-        if (!this.hasSeenMedia) {
-          console.log("From Twilio: Media event received: ", data);
-          console.log("Server: Suppressing additional messages...");
-          this.hasSeenMedia = true;
-        }
-        // Store media messages
-        this.messages.push(data);
-        if (this.messages.length >= REPEAT_THRESHOLD) {
-          console.log(
-            `From Twilio: ${this.messages.length} omitted media messages`
-          );
-          this.repeat();
-        }
-      }
-      if (data.event === "mark") {
-        console.log("From Twilio: Mark event received", data);
-      }
-      if (data.event === "close") {
-        console.log("From Twilio: Close event received: ", data);
-        this.close();
-      }
-    } else if (message.type === "binary") {
-      console.log("From Twilio: binary message received (not supported)");
-    }
-  }
-
-  repeat() {
-    const messages = [...this.messages];
-    this.messages = [];
-    const streamSid = messages[0].streamSid;
-
-    // Decode each message and store the bytes in an array
-    const messageByteBuffers = messages.map((msg) =>
-      Buffer.from(msg.media.payload, "base64")
-    );
-    // Combine all the bytes, and then base64 encode the entire payload.
-    const payload = Buffer.concat(messageByteBuffers).toString("base64");
-    const message = {
+  dialogflowService.on("audio", (audio) => {
+    const mediaMessage = {
+      streamSid,
       event: "media",
-      streamSid,
       media: {
-        payload,
+        payload: audio,
       },
     };
-    const messageJSON = JSON.stringify(message);
-    const payloadRE = /"payload":"[^"]*"/gi;
-    log(
-      `To Twilio: A single media event containing the exact audio from your previous ${messages.length} inbound media messages`,
-      messageJSON.replace(
-        payloadRE,
-        `"payload":"an omitted base64 encoded string with length of ${message.media.payload.length} characters"`
+    const mediaJSON = JSON.stringify(mediaMessage);
+    console.log(`Sending audio (${audio.length} characters)`);
+    mediaStream.write(mediaJSON);
+    // If this is the last message
+    if (dialogflowService.isStopped) {
+      const markMessage = {
+        streamSid,
+        event: "mark",
+        mark: {
+          name: "endOfInteraction",
+        },
+      };
+      const markJSON = JSON.stringify(markMessage);
+      console.log("Sending end of interaction mark", markJSON);
+      mediaStream.write(markJSON);
+    }
+  });
+
+  dialogflowService.on("interrupted", (transcript) => {
+    console.log(`Interrupted with "${transcript}"`);
+    if (!dialogflowService.isInterrupted) {
+      console.log("Clearing...");
+      const clearMessage = {
+        event: "clear",
+        streamSid,
+      };
+      mediaStream.write(JSON.stringify(clearMessage));
+      dialogflowService.isInterrupted = true;
+    }
+  });
+
+  dialogflowService.on("endOfInteraction", (queryResult) => {
+    const response = new Twilio.twiml.VoiceResponse();
+    const url = process.env.END_OF_INTERACTION_URL;
+    if (url) {
+      const qs = JSON.stringify(queryResult);
+      // In case the URL has a ?, use an ampersand
+      const appendage = url.includes("?") ? "&" : "?";
+      response.redirect(
+        `${url}${appendage}dialogflowJSON=${encodeURIComponent(qs)}`
+      );
+    } else {
+      response.hangup();
+    }
+    const twiml = response.toString();
+    return client
+      .calls(callSid)
+      .update({ twiml })
+      .then((call) =>
+        console.log(`Updated Call(${callSid}) with twiml: ${twiml}`)
       )
-    );
-    this.connection.sendUTF(messageJSON);
+      .catch((err) => console.error(err));
+  });
+});
 
-    // Send a mark message
-    const markMessage = {
-      event: "mark",
-      streamSid,
-      mark: {
-        name: `Repeat message ${this.repeatCount}`,
-      },
-    };
-    log("To Twilio: Sending mark event", markMessage);
-    this.connection.sendUTF(JSON.stringify(markMessage));
-    this.repeatCount++;
-    // if (this.repeatCount === 5) {
-    //   log(`Server: Repeated ${this.repeatCount} times...closing`);
-    //   this.connection.close(1000, "Repeated 5 times");
-    // }
-  }
-
-  close() {
-    log("Server: Closed");
-  }
-}
-
-wsserver.listen(HTTP_SERVER_PORT, function () {
-  console.log("Server listening on: ws://localhost:%s", HTTP_SERVER_PORT);
+const listener = app.listen(PORT, () => {
+  console.log("Your app is listening on port " + listener.address().port);
 });
