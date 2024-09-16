@@ -1,29 +1,23 @@
 import express from "express";
 import expressWebSocket from "express-ws";
 import { engine } from "express-handlebars";
-
 import websocketStream from "websocket-stream/stream.js";
 import WebSocket from "ws";
 import dotenv from "dotenv";
 import { SpeechClient } from "@google-cloud/speech";
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 expressWebSocket(app, null, { perMessageDeflate: false });
-
-app.engine("hbs", engine()); // Use engine() to create an instance
+app.engine("hbs", engine());
 app.set("view engine", "hbs");
 
 const PORT = process.env.EXPRESS_PORT || 3000;
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const VOICE_ID = process.env.ELEVENLABS_CUSTOM_VOICE_ID; // Corrected variable name
+const VOICE_ID = process.env.ELEVENLABS_CUSTOM_VOICE_ID;
 
-// Initialize Google Speech client
 const speechClient = new SpeechClient();
-
-// Middleware to parse JSON bodies
 app.use(express.json());
 
 app.post("/start-stream", (req, res) => {
@@ -36,6 +30,7 @@ let mediaStream;
 
 app.ws("/media", (ws) => {
   mediaStream = websocketStream(ws, { binary: false });
+
   const recognizeStream = speechClient.streamingRecognize({
     config: {
       encoding: "MULAW",
@@ -72,15 +67,22 @@ app.ws("/media", (ws) => {
       console.log(`Transcription: ${transcription}`);
 
       try {
-        // Placeholder for AI response
-        const aiResponse = "This is a placeholder response";
-        console.log(`AI Response: ${aiResponse}`);
+        // Sending transcription to Python WebSocket server
+        const pythonWs = new WebSocket("ws://localhost:5000");
+        pythonWs.on("open", () => {
+          pythonWs.send(transcription);
+        });
 
-        if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-          elevenLabsWs.send(JSON.stringify({ text: aiResponse }));
-        } else {
-          console.error("ElevenLabs WebSocket is not open");
-        }
+        pythonWs.on("message", (aiResponse) => {
+          console.log(`AI Response from Python: ${aiResponse}`);
+          if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+            elevenLabsWs.send(JSON.stringify({ text: aiResponse }));
+          }
+        });
+
+        pythonWs.on("error", (error) => {
+          console.error("Error in Python WebSocket:", error);
+        });
       } catch (error) {
         console.error("Error processing AI response:", error);
       }
@@ -107,6 +109,7 @@ async function connectToElevenLabs() {
     );
 
     ws.on("open", () => {
+      console.log("ElevenLabs websocket is open");
       ws.send(
         JSON.stringify({
           text: " ",
