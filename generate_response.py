@@ -22,9 +22,13 @@ VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID")
 aclient = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 # Initialize conversation history
+# conversation_history = [
+#     SystemMessage(
+#         content="You are a helpful assistant. Answer all questions to the best of your ability.")
+# ]
 conversation_history = [
     SystemMessage(
-        content="You are a helpful assistant. Answer all questions to the best of your ability.")
+        content="You are Zoya Abidi, a 23 year-old Pakistani-American who just graduated from UC Berkeley. Remember, you really desperately need help with finding jobs right now. Answer all questions to the best of your ability.")
 ]
 
 
@@ -71,6 +75,8 @@ async def stream(audio_stream):
             mpv_process.stdin.write(chunk)
             mpv_process.stdin.flush()
 
+    # TODO: stream to Twilio Media Stream aka Websocket
+
     if mpv_process.stdin:
         mpv_process.stdin.close()
     mpv_process.wait()
@@ -78,13 +84,12 @@ async def stream(audio_stream):
 
 async def text_to_speech_input_streaming(voice_id, text_iterator):
     """Send text to ElevenLabs API and stream the returned audio."""
-    uri = f"wss://api.elevenlabs.io/v1/text-to-speech/{
-        voice_id}/stream-input?model_id=eleven_turbo_v2_5"
+    uri = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id=eleven_turbo_v2_5"
 
     async with websockets.connect(uri) as websocket:
         await websocket.send(json.dumps({
             "text": " ",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
+            "voice_settings": {"stability": 0.2, "similarity_boost": 0.75, "style": 0.8, "use_speaker_boost": True},
             "xi_api_key": ELEVENLABS_API_KEY,
         }))
 
@@ -125,7 +130,7 @@ async def chat_completion(query):
 
     # Call OpenAI API
     response = await aclient.chat.completions.create(
-        model='gpt-4',
+        model='gpt-4o-mini',
         messages=messages,
         temperature=1,
         stream=True
@@ -151,16 +156,37 @@ async def chat_completion(query):
         conversation_history = [
             conversation_history[0]] + conversation_history[-10:]
 
-# Main execution
+
+async def handle_websocket(websocket, path):
+    """Handle WebSocket connections from Node.js server."""
+    print(f"New connection from {websocket.remote_address}")
+    try:
+        async for message in websocket:
+            print(f"Received message: {message}")  # Log every received message
+            try:
+                # Assume the message is a JSON string containing a 'transcription' field
+                data = json.loads(message)
+                transcription = data.get('transcription')
+                if transcription:
+                    print(f"Processing transcription: {transcription}")
+                    response = await chat_completion(transcription)
+                    print(f"AI response: {response}")  # Log AI response
+                    # Send the AI response back to the client
+                    await websocket.send(json.dumps({"response": response}))
+                else:
+                    print("Received message without transcription")
+            except json.JSONDecodeError:
+                print(f"Received non-JSON message: {message}")
+    except websockets.exceptions.ConnectionClosed:
+        print(f"Connection closed for {websocket.remote_address}")
 
 
 async def main():
-    while True:
-        user_query = input("You: ")
-        if user_query.lower() in ['exit', 'quit', 'bye']:
-            print("Goodbye!")
-            break
-        await chat_completion(user_query)
+    server = await websockets.serve(handle_websocket, "localhost", 3001)
+    print(f"WebSocket server started on ws://localhost:3001")
+
+    # Keep the server running
+    await asyncio.Future()  # Run forever
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -37,7 +37,7 @@ async def transcribe_audio(audio_chunk):
 
 
 async def generate_ai_response(transcription):
-    prompt_template = "You are an AI assistant. Respond to the user’s request: {input}"
+    prompt_template = "You're name is an AI assistant. Respond to the user’s request: {input}"
     prompt = prompt_template.format(input=transcription)
 
     try:
