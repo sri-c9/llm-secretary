@@ -13,6 +13,8 @@ expressWebSocket(app, null, { perMessageDeflate: false });
 app.engine("hbs", engine());
 app.set("view engine", "hbs");
 
+const payloadTemplate = {};
+
 const PORT = process.env.EXPRESS_PORT || 3000;
 
 const speechClient = new SpeechClient();
@@ -47,6 +49,15 @@ app.ws("/media", (ws) => {
       languageCode: "en-US",
     },
     interimResults: false,
+  });
+
+  mediaStream.on("connected", (connection) => {
+    console.log("mediaStream is connected", connection);
+  });
+
+  mediaStream.on("start", (start) => {
+    console.log("data sent on start event", start);
+    payloadTemplate["streamSID"] = start.streamSID;
   });
 
   mediaStream.on("data", async (data) => {
@@ -95,3 +106,5 @@ app.ws("/media", (ws) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
+export { mediaStream };

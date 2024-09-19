@@ -10,6 +10,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
 
+
 # Load environment variables
 load_dotenv()
 
@@ -30,6 +31,7 @@ conversation_history = [
     SystemMessage(
         content="You are Zoya Abidi, a 23 year-old Pakistani-American who just graduated from UC Berkeley. Remember, you really desperately need help with finding jobs right now. Answer all questions to the best of your ability.")
 ]
+sequenceNumber = 0
 
 
 def is_installed(lib_name):
@@ -69,17 +71,35 @@ async def stream(audio_stream):
         stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
 
-    print("Started streaming audio")
     async for chunk in audio_stream:
         if chunk:
             mpv_process.stdin.write(chunk)
             mpv_process.stdin.flush()
 
-    # TODO: stream to Twilio Media Stream aka Websocket
-
     if mpv_process.stdin:
         mpv_process.stdin.close()
     mpv_process.wait()
+
+    # print("Started streaming audio to mpv")
+    # uri = "ws://localhost:3000"
+    # async with websockets.connect(uri) as websocket:
+    #     print("Connected to Websocket at", websocket.path)
+    #     async for chunk in audio_stream:
+    #         if chunk:
+    #             # mpv_process.stdin.write(chunk)
+    #             # mpv_process.stdin.flush()
+    #             base64_audio = base64.b64encode(chunk).decode('utf-8')
+    #             await websocket.send(json.dumps(
+    #                 {
+    #                     "event": "media",
+    #                     "media": {
+    #                         "track": "outbound",
+    #                         "payload": base64_audio
+    #                     }
+    #                 }
+    #             ))
+    #             print("Sent chunk to websocket at ", websocket.path)
+
 
 
 async def text_to_speech_input_streaming(voice_id, text_iterator):
@@ -104,7 +124,7 @@ async def text_to_speech_input_streaming(voice_id, text_iterator):
                     elif data.get('isFinal'):
                         break
                 except websockets.exceptions.ConnectionClosed:
-                    print("Connection closed")
+                    print("Connection closed at path: ", websocket.path)
                     break
 
         listen_task = asyncio.create_task(stream(listen()))
@@ -152,9 +172,9 @@ async def chat_completion(query):
     conversation_history.append(AIMessage(content=full_response))
 
     # Limit conversation history to last 10 messages (5 exchanges)
-    if len(conversation_history) > 11:  # 11 to keep the initial system message
-        conversation_history = [
-            conversation_history[0]] + conversation_history[-10:]
+    # if len(conversation_history) > 11:  # 11 to keep the initial system message
+    #     conversation_history = [
+    #         conversation_history[0]] + conversation_history[-10:]
 
 
 async def handle_websocket(websocket, path):
@@ -170,7 +190,7 @@ async def handle_websocket(websocket, path):
                 if transcription:
                     print(f"Processing transcription: {transcription}")
                     response = await chat_completion(transcription)
-                    print(f"AI response: {response}")  # Log AI response
+
                     # Send the AI response back to the client
                     await websocket.send(json.dumps({"response": response}))
                 else:
