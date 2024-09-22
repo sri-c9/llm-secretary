@@ -9,6 +9,10 @@ from openai import AsyncOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
+import logging
+
+# logging.basicConfig(level=logging.DEBUG)
+# logger = logging.getLogger()
 
 
 # Load environment variables
@@ -31,7 +35,6 @@ conversation_history = [
     SystemMessage(
         content="You are Zoya Abidi, a 23 year-old Pakistani-American who just graduated from UC Berkeley. Remember, you really desperately need help with finding jobs right now. Answer all questions to the best of your ability.")
 ]
-sequenceNumber = 0
 
 
 def is_installed(lib_name):
@@ -60,46 +63,51 @@ async def text_chunker(chunks):
 
 async def stream(audio_stream):
     """Stream audio data using mpv player."""
-    if not is_installed("mpv"):
-        raise ValueError(
-            "mpv not found, necessary to stream audio. "
-            "Install instructions: https://mpv.io/installation/"
-        )
+    # MPV version is working
+    # if not is_installed("mpv"):
+    #     raise ValueError(
+    #         "mpv not found, necessary to stream audio. "
+    #         "Install instructions: https://mpv.io/installation/"
+    #     )
 
-    mpv_process = subprocess.Popen(
-        ["mpv", "--no-cache", "--no-terminal", "--", "fd://0"],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    # mpv_process = subprocess.Popen(
+    #     ["mpv", "--no-cache", "--no-terminal", "--", "fd://0"],
+    #     stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    # )
 
-    async for chunk in audio_stream:
-        if chunk:
-            mpv_process.stdin.write(chunk)
-            mpv_process.stdin.flush()
+    # async for chunk in audio_stream:
+    #     if chunk:
+    #         mpv_process.stdin.write(chunk)
+    #         mpv_process.stdin.flush()
 
-    if mpv_process.stdin:
-        mpv_process.stdin.close()
-    mpv_process.wait()
+    # if mpv_process.stdin:
+    #     mpv_process.stdin.close()
+    # mpv_process.wait()
 
-    # print("Started streaming audio to mpv")
-    # uri = "ws://localhost:3000"
-    # async with websockets.connect(uri) as websocket:
-    #     print("Connected to Websocket at", websocket.path)
-    #     async for chunk in audio_stream:
-    #         if chunk:
-    #             # mpv_process.stdin.write(chunk)
-    #             # mpv_process.stdin.flush()
-    #             base64_audio = base64.b64encode(chunk).decode('utf-8')
-    #             await websocket.send(json.dumps(
-    #                 {
-    #                     "event": "media",
-    #                     "media": {
-    #                         "track": "outbound",
-    #                         "payload": base64_audio
-    #                     }
-    #                 }
-    #             ))
-    #             print("Sent chunk to websocket at ", websocket.path)
+    print("Started streaming audio to Node.js server")
+    uri = "ws://localhost:3000/media"
 
+    async with websockets.connect(uri) as websocket:
+        print("Connected to Websocket at", websocket.path)
+
+        # Sending media stream chunks to the WebSocket (media)
+        async for chunk in audio_stream:
+            if chunk:
+                base64_audio = base64.b64encode(chunk).decode('utf-8')
+                print("Encoded audio ")
+
+                await websocket.send(json.dumps({
+                    "event": "media",
+                    "media": {
+                        "track": "outbound",  # Indicating outbound media stream
+                        "payload": base64_audio
+                    }
+                }))
+                print("Sent audio to Node.js server")
+                # Send mark message to signify
+
+            print("Sent chunk to websocket: ", websocket.path)
+        print("Done sending audio")
 
 
 async def text_to_speech_input_streaming(voice_id, text_iterator):
@@ -171,15 +179,16 @@ async def chat_completion(query):
     # Update conversation history with the AI's response
     conversation_history.append(AIMessage(content=full_response))
 
+    print("AI Response in chat_completions: ", full_response)
+
     # Limit conversation history to last 10 messages (5 exchanges)
     # if len(conversation_history) > 11:  # 11 to keep the initial system message
     #     conversation_history = [
     #         conversation_history[0]] + conversation_history[-10:]
 
 
-async def handle_websocket(websocket, path):
+async def handle_websocket(websocket):
     """Handle WebSocket connections from Node.js server."""
-    print(f"New connection from {websocket.remote_address}")
     try:
         async for message in websocket:
             print(f"Received message: {message}")  # Log every received message
@@ -189,16 +198,16 @@ async def handle_websocket(websocket, path):
                 transcription = data.get('transcription')
                 if transcription:
                     print(f"Processing transcription: {transcription}")
-                    response = await chat_completion(transcription)
-
-                    # Send the AI response back to the client
-                    await websocket.send(json.dumps({"response": response}))
+                    await chat_completion(transcription)
                 else:
                     print("Received message without transcription")
             except json.JSONDecodeError:
                 print(f"Received non-JSON message: {message}")
-    except websockets.exceptions.ConnectionClosed:
-        print(f"Connection closed for {websocket.remote_address}")
+    except websockets.ConnectionClosedError as e:
+        print(f"Connection closed with error: {e}")
+
+    except Exception as e:
+        print(f"Unexpected error: {e}")
 
 
 async def main():
