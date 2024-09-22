@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
 import logging
 
+
 # logging.basicConfig(level=logging.DEBUG)
 # logger = logging.getLogger()
 
@@ -106,8 +107,14 @@ async def stream(audio_stream):
                 print("Sent audio to Node.js server")
                 # Send mark message to signify
 
-            print("Sent chunk to websocket: ", websocket.path)
-        print("Done sending audio")
+        await websocket.send(json.dumps(
+            {
+                "event": "pythonMark",
+                "mark": {
+                    "name": "AI audio",
+                },
+            }))
+    print("Done sending audio")
 
 
 async def text_to_speech_input_streaming(voice_id, text_iterator):
@@ -119,6 +126,7 @@ async def text_to_speech_input_streaming(voice_id, text_iterator):
             "text": " ",
             "voice_settings": {"stability": 0.2, "similarity_boost": 0.75, "style": 0.8, "use_speaker_boost": True},
             "xi_api_key": ELEVENLABS_API_KEY,
+            "output_form": "ulaw_8000"
         }))
 
         async def listen():
